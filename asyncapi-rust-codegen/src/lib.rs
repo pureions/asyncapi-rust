@@ -234,8 +234,43 @@ pub fn derive_to_asyncapi_message(input: TokenStream) -> TokenStream {
     }
 
     // Parse enum variants or struct
-    let (messages, _is_enum) = match &input.data {
-        Data::Struct(_) | Data::Enum(_) => {
+    let messages = match &input.data {
+        Data::Enum(data_enum) => {
+            let mut message_metas = Vec::new();
+
+            for variant in &data_enum.variants {
+                let variant_name = &variant.ident;
+                let variant_ident_str = variant_name.to_string();
+
+                // Wire discriminant: serde rename if present (even if empty), else variant ident.
+                let discriminant = extract_serde_rename(&variant.attrs)
+                    .unwrap_or_else(|| variant_ident_str.clone());
+
+                // Extract asyncapi metadata
+                let asyncapi_meta = extract_asyncapi_meta(&variant.attrs);
+
+                // Message identity: explicit message_name override, else variant ident.
+                // We deliberately do NOT use the serde rename here — it may be empty,
+                // non-unique across enums, or unsuitable as a code identifier.
+                let message_name = asyncapi_meta
+                    .message_name
+                    .clone()
+                    .unwrap_or_else(|| variant_ident_str.clone());
+
+                message_metas.push(MessageMeta {
+                    name: message_name,
+                    discriminant,
+                    summary: asyncapi_meta.summary,
+                    description: asyncapi_meta.description,
+                    title: asyncapi_meta.title,
+                    content_type: asyncapi_meta.content_type,
+                    triggers_binary: asyncapi_meta.triggers_binary,
+                });
+            }
+
+            message_metas
+        }
+        Data::Struct(_) => {
             // For structs, extract metadata from the struct itself
             let asyncapi_meta = extract_asyncapi_meta(&input.attrs);
             let struct_name = name.to_string();
@@ -244,18 +279,15 @@ pub fn derive_to_asyncapi_message(input: TokenStream) -> TokenStream {
                 .clone()
                 .unwrap_or_else(|| struct_name.clone());
 
-            (
-                vec![MessageMeta {
-                    name: message_name,
-                    discriminant: struct_name,
-                    summary: asyncapi_meta.summary,
-                    description: asyncapi_meta.description,
-                    title: asyncapi_meta.title,
-                    content_type: asyncapi_meta.content_type,
-                    triggers_binary: asyncapi_meta.triggers_binary,
-                }],
-                false,
-            )
+            vec![MessageMeta {
+                name: message_name,
+                discriminant: struct_name,
+                summary: asyncapi_meta.summary,
+                description: asyncapi_meta.description,
+                title: asyncapi_meta.title,
+                content_type: asyncapi_meta.content_type,
+                triggers_binary: asyncapi_meta.triggers_binary,
+            }]
         }
         Data::Union(_) => {
             return syn::Error::new_spanned(name, "ToAsyncApiMessage cannot be derived for unions")
