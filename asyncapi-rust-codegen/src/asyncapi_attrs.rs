@@ -1,6 +1,27 @@
 //! Utilities for parsing asyncapi attributes
 
-use syn::Attribute;
+use syn::{Attribute, Path};
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ResponseTopicMeta {
+    Reference(Path),
+    Uri(String),
+}
+
+impl Default for ResponseTopicMeta {
+    fn default() -> Self {
+        Self::Uri(String::default())
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MqttMessageBindingsMeta {
+    pub payload_format_indicator: Option<u8>,
+    pub correlation_data: Option<Path>,
+    pub content_type: Option<String>,
+    pub response_topic: Option<ResponseTopicMeta>,
+    pub binding_version: Option<String>,
+}
 
 /// AsyncAPI metadata extracted from attributes
 #[derive(Debug, Default, Clone)]
@@ -13,10 +34,26 @@ pub struct AsyncApiMeta {
     /// Override the message name used in `components.messages` and `asyncapi_message_names()`.
     /// When absent the Rust variant/type identifier is used.
     pub message_name: Option<String>,
+    pub mqtt: Option<MqttMessageBindingsMeta>,
 }
 
-/// Extract asyncapi metadata from `#[asyncapi(...)]` attributes
-pub fn extract_asyncapi_meta(attrs: &[Attribute]) -> AsyncApiMeta {
+fn parse_response_topic(expr: syn::Expr) -> Option<ResponseTopicMeta> {
+    match expr {
+        syn::Expr::Lit(expr_lit) => match expr_lit.lit {
+            syn::Lit::Str(s) => Some(ResponseTopicMeta::Uri(s.value())),
+            _ => None,
+        },
+        syn::Expr::Path(expr_path) => Some(ResponseTopicMeta::Reference(expr_path.path)),
+        _ => None,
+    }
+}
+
+/// Extract asyncapi metadata from `#[asyncapi(...)]` attributes.
+///
+/// Returns an error when an `#[asyncapi(...)]` attribute is malformed (e.g. a
+/// value of the wrong literal type) so the derive macro can surface it as a
+/// compile error rather than silently dropping the binding.
+pub fn extract_asyncapi_meta(attrs: &[Attribute]) -> syn::Result<AsyncApiMeta> {
     let mut meta = AsyncApiMeta::default();
 
     for attr in attrs {
@@ -24,7 +61,7 @@ pub fn extract_asyncapi_meta(attrs: &[Attribute]) -> AsyncApiMeta {
             continue;
         }
 
-        let _ = attr.parse_nested_meta(|nested| {
+        attr.parse_nested_meta(|nested| {
             if nested.path.is_ident("summary") {
                 let value = nested.value()?;
                 let s: syn::LitStr = value.parse()?;
@@ -48,12 +85,42 @@ pub fn extract_asyncapi_meta(attrs: &[Attribute]) -> AsyncApiMeta {
                 let value = nested.value()?;
                 let s: syn::LitStr = value.parse()?;
                 meta.message_name = Some(s.value());
+            } else if nested.path.is_ident("mqtt") {
+                let mut binding = MqttMessageBindingsMeta::default();
+
+                nested.parse_nested_meta(|m| {
+                    if m.path.is_ident("payload_format_indicator") {
+                        let v = m.value()?;
+                        let lit: syn::LitInt = v.parse()?;
+                        binding.payload_format_indicator = Some(lit.base10_parse::<u8>()?);
+                    } else if m.path.is_ident("correlation_data") {
+                        let v = m.value()?;
+                        let s: syn::Path = v.parse()?;
+                        binding.correlation_data = Some(s);
+                    } else if m.path.is_ident("content_type") {
+                        let v = m.value()?;
+                        let s: syn::LitStr = v.parse()?;
+                        binding.content_type = Some(s.value());
+                    } else if m.path.is_ident("response_topic") {
+                        let v = m.value()?;
+                        let expr: syn::Expr = v.parse()?;
+                        binding.response_topic = parse_response_topic(expr);
+                    } else if m.path.is_ident("binding_version") {
+                        let v = m.value()?;
+                        let s: syn::LitStr = v.parse()?;
+                        binding.binding_version = Some(s.value());
+                    }
+
+                    Ok(())
+                })?;
+
+                meta.mqtt = Some(binding);
             }
             Ok(())
-        });
+        })?;
     }
 
-    meta
+    Ok(meta)
 }
 
 #[cfg(test)]
@@ -67,7 +134,7 @@ mod tests {
             #[asyncapi(summary = "Send a message")]
         }];
 
-        let meta = extract_asyncapi_meta(&attrs);
+        let meta = extract_asyncapi_meta(&attrs).unwrap();
         assert_eq!(meta.summary, Some("Send a message".to_string()));
         assert_eq!(meta.description, None);
     }
@@ -78,7 +145,7 @@ mod tests {
             #[asyncapi(summary = "Send message", description = "Sends a chat message to a room")]
         }];
 
-        let meta = extract_asyncapi_meta(&attrs);
+        let meta = extract_asyncapi_meta(&attrs).unwrap();
         assert_eq!(meta.summary, Some("Send message".to_string()));
         assert_eq!(
             meta.description,
@@ -87,12 +154,31 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_multiple_with_mqtt_bindings() {
+        let attrs: Vec<Attribute> = vec![parse_quote! {
+            #[asyncapi(mqtt(response_topic = "/a/b/d"))]
+        }];
+
+        let meta = extract_asyncapi_meta(&attrs).unwrap();
+        assert_eq!(
+            meta.mqtt,
+            Some(MqttMessageBindingsMeta {
+                response_topic: Some(ResponseTopicMeta::Uri("/a/b/d".to_string())),
+                payload_format_indicator: None,
+                content_type: None,
+                correlation_data: None,
+                binding_version: None
+            })
+        )
+    }
+
+    #[test]
     fn test_extract_content_type() {
         let attrs: Vec<Attribute> = vec![parse_quote! {
             #[asyncapi(content_type = "application/octet-stream")]
         }];
 
-        let meta = extract_asyncapi_meta(&attrs);
+        let meta = extract_asyncapi_meta(&attrs).unwrap();
         assert_eq!(
             meta.content_type,
             Some("application/octet-stream".to_string())
@@ -105,7 +191,7 @@ mod tests {
             #[derive(Debug)]
         }];
 
-        let meta = extract_asyncapi_meta(&attrs);
+        let meta = extract_asyncapi_meta(&attrs).unwrap();
         assert_eq!(meta.summary, None);
         assert_eq!(meta.description, None);
     }
@@ -116,7 +202,7 @@ mod tests {
             #[asyncapi(triggers_binary)]
         }];
 
-        let meta = extract_asyncapi_meta(&attrs);
+        let meta = extract_asyncapi_meta(&attrs).unwrap();
         assert!(meta.triggers_binary);
         assert_eq!(meta.content_type, None);
     }
@@ -127,7 +213,7 @@ mod tests {
             #[asyncapi(title = "My Message")]
         }];
 
-        let meta = extract_asyncapi_meta(&attrs);
+        let meta = extract_asyncapi_meta(&attrs).unwrap();
         assert_eq!(meta.title, Some("My Message".to_string()));
     }
 
@@ -137,7 +223,18 @@ mod tests {
             #[asyncapi(message_name = "CurrentEditorResponse")]
         }];
 
-        let meta = extract_asyncapi_meta(&attrs);
+        let meta = extract_asyncapi_meta(&attrs).unwrap();
         assert_eq!(meta.message_name, Some("CurrentEditorResponse".to_string()));
+    }
+
+    #[test]
+    fn test_malformed_mqtt_binding_errors() {
+        // payload_format_indicator expects an integer literal; a string is invalid
+        // and must surface as an error rather than being silently dropped.
+        let attrs: Vec<Attribute> = vec![parse_quote! {
+            #[asyncapi(mqtt(payload_format_indicator = "not-an-int"))]
+        }];
+
+        assert!(extract_asyncapi_meta(&attrs).is_err());
     }
 }
