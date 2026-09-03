@@ -27,7 +27,6 @@ pub enum ChatMessage {
         description = "Sent when a user enters a chat room"
     )]
     UserJoin(UserJoin),
-    UserJoin2(UserJoin),
 
     /// User sends a chat message
     #[serde(rename = "chat.message")]
@@ -44,10 +43,7 @@ pub enum ChatMessage {
     /// User leaves a chat room
     #[serde(rename = "user.leave")]
     #[asyncapi(summary = "User leaves", description = "Sent when a user exits a room")]
-    UserLeave {
-        username: String,
-        room: String,
-    },
+    UserLeave { username: String, room: String },
 }
 
 /// System messages for status and errors
