@@ -472,6 +472,8 @@ fn test_asyncapi_operation_with_messages() {
 
     let spec = ChatApi::asyncapi_spec();
 
+    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+
     // Verify operations exist
     let operations = spec.operations.expect("Should have operations");
     assert_eq!(operations.len(), 2);
@@ -495,9 +497,10 @@ fn test_asyncapi_operation_with_messages() {
     // Verify operation message references point to channel messages (not components directly)
     match &send_messages[0] {
         asyncapi_rust::MessageRef::Reference { reference } => {
+            println!("{}", reference);
             assert!(
-                reference == "#/channels/chat/messages/user.join"
-                    || reference == "#/channels/chat/messages/chat.message"
+                reference == "#/channels/chat/messages/UserJoin"
+                    || reference == "#/channels/chat/messages/ChatMessage"
             );
         }
         _ => panic!("Expected message reference"),
@@ -513,14 +516,14 @@ fn test_asyncapi_operation_with_messages() {
     assert_eq!(channel_messages.len(), 3); // All unique messages from both operations
 
     // Verify channel messages reference components directly
-    assert!(channel_messages.contains_key("user.join"));
-    assert!(channel_messages.contains_key("chat.message"));
-    assert!(channel_messages.contains_key("system.status"));
+    assert!(channel_messages.contains_key("UserJoin"));
+    assert!(channel_messages.contains_key("ChatMessage"));
+    assert!(channel_messages.contains_key("Status"));
 
     // Verify channel messages reference components (not other channels)
-    match channel_messages.get("user.join").unwrap() {
+    match channel_messages.get("UserJoin").unwrap() {
         asyncapi_rust::MessageRef::Reference { reference } => {
-            assert_eq!(reference, "#/components/messages/user.join");
+            assert_eq!(reference, "#/components/messages/UserJoin");
         }
         _ => panic!("Expected message reference"),
     }

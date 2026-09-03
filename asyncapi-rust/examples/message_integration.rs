@@ -10,6 +10,12 @@
 use asyncapi_rust::{AsyncApi, ToAsyncApiMessage, schemars::JsonSchema};
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, JsonSchema)]
+pub struct UserJoin {
+    pub username: String,
+    pub room: String,
+}
+
 /// Chat messages for a chat application
 #[derive(Serialize, Deserialize, JsonSchema, ToAsyncApiMessage)]
 #[serde(tag = "type")]
@@ -20,7 +26,8 @@ pub enum ChatMessage {
         summary = "User joins",
         description = "Sent when a user enters a chat room"
     )]
-    UserJoin { username: String, room: String },
+    UserJoin(UserJoin),
+    UserJoin2(UserJoin),
 
     /// User sends a chat message
     #[serde(rename = "chat.message")]
@@ -37,7 +44,10 @@ pub enum ChatMessage {
     /// User leaves a chat room
     #[serde(rename = "user.leave")]
     #[asyncapi(summary = "User leaves", description = "Sent when a user exits a room")]
-    UserLeave { username: String, room: String },
+    UserLeave {
+        username: String,
+        room: String,
+    },
 }
 
 /// System messages for status and errors
