@@ -950,9 +950,7 @@ pub fn derive_asyncapi(input: TokenStream) -> TokenStream {
             } else {
                 let message_calls: Vec<_> = operations_for_channel
                     .iter()
-                    .flat_map(|op| &op.messages)
-                    .collect::<std::collections::HashSet<_>>() // Deduplicate
-                    .into_iter()
+                    .flat_map(|op| &op.messages) // Deduplicate
                     .map(|type_name| {
                         quote! {
                             // Call asyncapi_message_names() for this type and add references
