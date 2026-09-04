@@ -26,7 +26,7 @@ pub enum ChatMessage {
         summary = "User joins",
         description = "Sent when a user enters a chat room"
     )]
-    UserJoin(UserJoin),
+    UserJoin { username: String, room: String },
 
     /// User sends a chat message
     #[serde(rename = "chat.message")]
