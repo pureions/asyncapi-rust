@@ -511,11 +511,11 @@ pub fn derive_to_asyncapi_message(input: TokenStream) -> TokenStream {
                 {
                     use schemars::schema_for;
 
-                let schema = schema_for!(Self);
+                    let schema = schema_for!(Self);
 
-                // Convert schemars RootSchema to JSON
-                let schema_json = serde_json::to_value(&schema)
-                    .expect("Failed to serialize schema");
+                    // Convert schemars RootSchema to JSON
+                    let schema_json = serde_json::to_value(&schema)
+                        .expect("Failed to serialize schema");
 
                     // Build a discriminant→schema map using the actual serde tag field name.
                     let tag_field = Self::asyncapi_tag_field();
