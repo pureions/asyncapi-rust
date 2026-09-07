@@ -1022,22 +1022,36 @@ pub fn derive_asyncapi(input: TokenStream) -> TokenStream {
             let messages_field = if operation.messages.is_empty() {
                 quote! { None }
             } else {
-                let message_calls = operation.messages.iter().map(|type_name| {
-                    quote! {
-                        // Call asyncapi_message_names() for this type and add references to channel messages
-                        for msg_name in #type_name::asyncapi_message_names() {
-                            message_refs.push(asyncapi_rust::MessageRef::Reference {
-                                reference: format!("#/channels/{}/messages/{}", #channel_ref, msg_name),
-                            });
+                let message_calls: Vec<_> = operation
+                    .messages
+                    .iter()
+                    .map(|type_name| {
+                        quote! {
+                            for msg_name in #type_name::asyncapi_message_names() {
+                                message_refs
+                                    .entry(msg_name.to_string())
+                                    .or_insert_with(|| {
+                                        asyncapi_rust::MessageRef::Reference {
+                                            reference: format!(
+                                                "#/channels/{}/messages/{}",
+                                                #channel_ref,
+                                                msg_name
+                                            ),
+                                        }
+                                    });
+                            }
                         }
-                    }
-                });
+                    })
+                    .collect();
 
                 quote! {
                     {
-                        let mut message_refs = Vec::new();
+                        let mut message_refs =
+                            asyncapi_rust::indexmap::IndexMap::new();
+
                         #(#message_calls)*
-                        Some(message_refs)
+
+                        Some(message_refs.into_values().collect())
                     }
                 }
             };
