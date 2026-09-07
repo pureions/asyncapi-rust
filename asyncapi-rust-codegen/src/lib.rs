@@ -1005,6 +1005,22 @@ pub fn derive_asyncapi(input: TokenStream) -> TokenStream {
             let channel_ref = &operation.channel;
             let action = &operation.action;
 
+            // Validate that the operation references a declared channel
+            if !spec_meta
+                .channels
+                .iter()
+                .any(|channel| channel.name == *channel_ref)
+            {
+                return syn::Error::new_spanned(
+                    channel_ref,
+                    format!(
+                        "Operation '{}' references unknown channel '{}'",
+                        name, channel_ref
+                    ),
+                )
+                .to_compile_error();
+            }
+
             // Convert action string to OperationAction enum
             let action_enum = if action == "send" {
                 quote! { asyncapi_rust::OperationAction::Send }
