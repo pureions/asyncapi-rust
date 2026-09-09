@@ -1154,21 +1154,21 @@ pub fn derive_asyncapi(input: TokenStream) -> TokenStream {
     };
 
     // Generate components with messages and hoisted shared schemas
-    let components_code = if spec_meta.message_types.is_empty() {
+    let mut all_message_types = spec_meta.message_types.clone();
+
+    for type_name in spec_meta
+        .operations
+        .iter()
+        .flat_map(|operation| operation.messages.iter())
+    {
+        if !all_message_types.contains(type_name) {
+            all_message_types.push(type_name.clone());
+        }
+    }
+
+    let components_code = if all_message_types.is_empty() {
         quote! { None }
     } else {
-        let mut all_message_types = spec_meta.message_types.clone();
-
-        for type_name in spec_meta
-            .operations
-            .iter()
-            .flat_map(|operation| operation.messages.iter())
-        {
-            if !all_message_types.contains(type_name) {
-                all_message_types.push(type_name.clone());
-            }
-        }
-
         let type_calls = all_message_types.iter().map(|type_name| {
             quote! {
                 for msg in #type_name::asyncapi_messages() {
